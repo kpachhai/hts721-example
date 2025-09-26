@@ -1,25 +1,28 @@
 import { network } from "hardhat";
 
-// Usage: npx hardhat run scripts/deploy.ts --network testnet
+// Usage: npx hardhat run scripts/deployManaged.ts --network testnet
 const { ethers } = await network.connect({ network: "testnet" });
 
 async function main() {
   const [deployer] = await ethers.getSigners();
   console.log("Deployer:", deployer.address);
 
-  const Factory = await ethers.getContractFactory("SimpleHTS721", deployer);
+  const Factory = await ethers.getContractFactory(
+    "SimpleHTS721Managed",
+    deployer
+  );
   const c = await Factory.deploy();
   await c.waitForDeployment();
-  console.log("SimpleHTS721 contract:", await c.getAddress());
+  console.log("SimpleHTS721Managed contract:", await c.getAddress());
 
-  // Initialize WITHOUT KYC so mint succeeds immediately.
+  // Include KYC key because we will grant KYC in the interaction script.
   const initTx = await c.initialize(
-    "SimpleToken",
-    "STKN",
-    "simple demo",
+    "ManagedToken",
+    "MGT",
+    "managed demo",
     {
       admin: true,
-      kyc: false,
+      kyc: true,
       freeze: true,
       wipe: true,
       supply: true,
@@ -34,7 +37,9 @@ async function main() {
   await initTx.wait();
   console.log("Initialized token:", await c.hederaTokenAddress());
 
-  console.log("Deployment & initialization complete. Use interact.ts to mint.");
+  console.log(
+    "Deployment complete. Use interactManaged.ts to exercise management features."
+  );
 }
 
 main().catch(console.error);

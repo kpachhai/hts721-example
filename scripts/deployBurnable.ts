@@ -1,22 +1,24 @@
 import { network } from "hardhat";
 
-// Usage: npx hardhat run scripts/deploy.ts --network testnet
+// Usage: npx hardhat run scripts/deployBurnable.ts --network testnet
 const { ethers } = await network.connect({ network: "testnet" });
 
 async function main() {
   const [deployer] = await ethers.getSigners();
   console.log("Deployer:", deployer.address);
 
-  const Factory = await ethers.getContractFactory("SimpleHTS721", deployer);
+  const Factory = await ethers.getContractFactory(
+    "SimpleHTS721Burnable",
+    deployer
+  );
   const c = await Factory.deploy();
   await c.waitForDeployment();
-  console.log("SimpleHTS721 contract:", await c.getAddress());
+  console.log("SimpleHTS721Burnable contract:", await c.getAddress());
 
-  // Initialize WITHOUT KYC so mint succeeds immediately.
   const initTx = await c.initialize(
-    "SimpleToken",
-    "STKN",
-    "simple demo",
+    "BurnableToken",
+    "BRN",
+    "burn demo",
     {
       admin: true,
       kyc: false,
@@ -34,7 +36,9 @@ async function main() {
   await initTx.wait();
   console.log("Initialized token:", await c.hederaTokenAddress());
 
-  console.log("Deployment & initialization complete. Use interact.ts to mint.");
+  console.log(
+    "Deployment & initialization complete. Use interactBurnable.ts to mint & burn."
+  );
 }
 
 main().catch(console.error);
