@@ -5,7 +5,7 @@ const { ethers } = await network.connect({ network: "testnet" });
 
 async function main() {
   // Replace with your deployed contract address
-  const contractAddress = "0x0E6ca3F13DC4f47C8c16dd7c730136049E1D152A";
+  const contractAddress = "0x7700d68a2fa53948Bef8AB9d42a15F04b05Ee024";
 
   const [caller] = await ethers.getSigners();
   console.log("Caller:", caller.address);
@@ -29,6 +29,48 @@ async function main() {
 
   const balAfter = await c.balanceOf(caller.address);
   console.log("Balance after mint:", balAfter.toString());
+
+  // Let's try to transfer using the wrapper contract. This should fail because
+  // the wrapper contract does not own the token.
+  try {
+    const transferTx = await c.transferFrom(
+      caller.address,
+      "0x4204932a79B59C0B79E460eA34376e5dD833667a",
+      1
+    );
+    await transferTx.wait();
+    console.log(
+      "Transferred tokenId 1 to a random address. Tx:",
+      transferTx.hash
+    );
+  } catch (e) {
+    console.log("Transfer failed as expected. ");
+    // Approve the wrapper contract to transfer the token on behalf of the caller
+    console.log("Now let's approve first and try again.");
+
+    const erc721 = new ethers.Contract(
+      await c.hederaTokenAddress(),
+      ["function approve(address to, uint256 tokenId) external"],
+      caller
+    );
+    const approveTx = await erc721.approve(contractAddress, 1, {
+      gasLimit: 800_000
+    });
+    await approveTx.wait();
+    console.log("Approved tokenId 1 for caller. Tx:", approveTx.hash);
+
+    const transferTx2 = await c.transferFrom(
+      caller.address,
+      "0x4204932a79B59C0B79E460eA34376e5dD833667a",
+      1,
+      { gasLimit: 75_000 }
+    );
+    await transferTx2.wait();
+    console.log(
+      "Transferred tokenId 1 to a reandom address after approval. Tx:",
+      transferTx2.hash
+    );
+  }
 }
 
 main().catch(console.error);

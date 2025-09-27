@@ -13,14 +13,8 @@ abstract contract HTS721Burnable is HTS721Initializable {
 
     function _burn(uint256 tokenId) internal onlyInitialized {
         if (hederaTokenAddress == address(0)) revert TokenNotCreated();
-        address owner_ = IERC721(hederaTokenAddress).ownerOf(tokenId);
-        if (owner_ != address(this)) {
-            IERC721(hederaTokenAddress).transferFrom(
-                owner_,
-                address(this),
-                tokenId
-            );
-        }
+        transferFrom(msg.sender, address(this), tokenId);
+
         int64[] memory serials = new int64[](1);
         serials[0] = _toI64(tokenId);
 

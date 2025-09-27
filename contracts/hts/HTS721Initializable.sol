@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import {IHederaTokenService} from "@hashgraph/smart-contracts/contracts/system-contracts/hedera-token-service/IHederaTokenService.sol";
 import {IHRC719} from "@hashgraph/smart-contracts/contracts/system-contracts/hedera-token-service/IHRC719.sol";
 
-import {ZeroAddress, HtsCallFailed, TokenCreationFailed, MetadataTooLarge, TokenNotCreated, CastOverflow, NotAuthorized, AlreadyInitialized, NotInitialized, LengthMismatch} from "./HTS721Errors.sol";
+import {ZeroAddress, HtsCallFailed, TokenCreationFailed, MetadataTooLarge, TokenNotCreated, CastOverflow, NotAuthorized, AlreadyInitialized, NotInitialized, LengthMismatch, WrapperApproveOnlyWhenContractOwns, WrapperTransferNotAuthorized, WrapperSetApprovalOnlyWhenContractOwns} from "./HTS721Errors.sol";
 import {HTSCommon} from "./HTSCommon.sol";
 
 /**
@@ -17,6 +17,14 @@ import {HTSCommon} from "./HTSCommon.sol";
  * @notice Two-phase HTS NFT base:
  *         1) Deploy (constructor does nothing HTS-specific)
  *         2) initialize() creates the underlying HTS NFT with selected contract-held keys & treasury
+ *
+ * IMPORTANT (Hedera nuance):
+ * - State-changing ERC721 calls forwarded here run with msg.sender = this wrapper when
+ *   they reach the underlying HTS token. So approval/transfer succeed ONLY if:
+ *     (a) The wrapper already owns the token (treasury custody), OR
+ *     (b) The wrapper has been approved on the underlying (user called underlying.approve(wrapper, tokenId)), OR
+ *     (c) The wrapper is an operator via underlying.setApprovalForAll(owner, true).
+ * - We add guardrails that give explicit errors instead of opaque underlying reverts.
  */
 abstract contract HTS721Initializable is
     ERC165,
@@ -27,21 +35,27 @@ abstract contract HTS721Initializable is
 {
     int32 internal constant DEFAULT_AUTO_RENEW_PERIOD = 7776000;
     uint256 internal constant MAX_METADATA_LEN = 100;
+    uint256 private constant INT64_MAX = 0x7fffffffffffffff;
 
     address public hederaTokenAddress;
     bool public initialized;
 
-    // Track last minted serial for optional enumeration
+    // For optional enumeration extensions
     uint256 internal _lastMintedSerial;
 
     bytes private constant DEFAULT_METADATA = hex"01";
-    uint256 private constant INT64_MAX = 0x7fffffffffffffff;
 
     event Initialized(address indexed token, string name, string symbol);
     event KeysAdded(uint256 mask);
     event KeysDropped(uint256 mask);
     event TreasuryUpdated(address indexed newTreasury);
     event Minted(address indexed to, uint256 indexed tokenId);
+    event TreasuryTransfer(
+        address indexed from,
+        address indexed to,
+        uint256 indexed tokenId
+    );
+    event WrapperOperatorSet(address indexed operator, bool approved);
 
     struct InitKeys {
         bool admin;
@@ -64,6 +78,9 @@ abstract contract HTS721Initializable is
 
     constructor() Ownable(msg.sender) {}
 
+    /* =========================================================
+                                INIT
+       ========================================================= */
     function initialize(
         string memory name_,
         string memory symbol_,
@@ -111,6 +128,7 @@ abstract contract HTS721Initializable is
                 IHederaTokenService.createNonFungibleToken.selector,
                 int32(-1)
             );
+
         (int32 rc, address tokenAddress) = abi.decode(result, (int32, address));
         if (rc != SUCCESS || tokenAddress == address(0))
             revert TokenCreationFailed();
@@ -121,10 +139,9 @@ abstract contract HTS721Initializable is
         emit Initialized(tokenAddress, name_, symbol_);
     }
 
-    // ---------------------------------------------------------------------
-    // Key & Treasury Management
-    // ---------------------------------------------------------------------
-
+    /* =========================================================
+                          KEY & TREASURY MGMT
+       ========================================================= */
     function addKeys(
         InitKeys memory addCfg
     ) external onlyOwner onlyInitialized {
@@ -154,15 +171,15 @@ abstract contract HTS721Initializable is
     ) external onlyOwner onlyInitialized {
         if (newTreasury == address(0)) revert ZeroAddress();
 
-        IHederaTokenService.HederaToken memory partialTokenInfo;
-        partialTokenInfo.treasury = newTreasury;
-        partialTokenInfo.expiry = IHederaTokenService.Expiry(0, address(0), 0);
+        IHederaTokenService.HederaToken memory partialInfo;
+        partialInfo.treasury = newTreasury;
+        partialInfo.expiry = IHederaTokenService.Expiry(0, address(0), 0);
 
         (bool ok, bytes memory res) = HTS_PRECOMPILE_ADDRESS.call(
             abi.encodeWithSelector(
                 IHederaTokenService.updateTokenInfo.selector,
                 hederaTokenAddress,
-                partialTokenInfo
+                partialInfo
             )
         );
         int32 rc = ok ? abi.decode(res, (int32)) : int32(-1);
@@ -175,9 +192,9 @@ abstract contract HTS721Initializable is
         emit TreasuryUpdated(newTreasury);
     }
 
-    // ---------------------------------------------------------------------
-    // ERC721 Metadata
-    // ---------------------------------------------------------------------
+    /* =========================================================
+                          METADATA (VIEWS)
+       ========================================================= */
     function name()
         external
         view
@@ -202,9 +219,9 @@ abstract contract HTS721Initializable is
         return IERC721Metadata(hederaTokenAddress).tokenURI(tokenId);
     }
 
-    // ---------------------------------------------------------------------
-    // ERC721 Views
-    // ---------------------------------------------------------------------
+    /* =========================================================
+                          CORE VIEWS
+       ========================================================= */
     function balanceOf(
         address owner
     ) external view override onlyInitialized returns (uint256) {
@@ -227,35 +244,87 @@ abstract contract HTS721Initializable is
         return IERC721(hederaTokenAddress).isApprovedForAll(owner, operator);
     }
 
-    // ---------------------------------------------------------------------
-    // ERC721 State
-    // ---------------------------------------------------------------------
+    /* =========================================================
+                        STATE: GUARDED WRITES
+       ========================================================= */
+
+    /**
+     * @dev Owner-only. Valid ONLY when the treasury (this contract) owns tokenId.
+     * Users will *never* call this; they approve the underlying token directly.
+     */
     function approve(
         address to,
         uint256 tokenId
-    ) external override onlyInitialized {
+    ) external override onlyInitialized onlyOwner {
+        address currentOwner = IERC721(hederaTokenAddress).ownerOf(tokenId);
+        if (currentOwner != address(this)) {
+            revert WrapperApproveOnlyWhenContractOwns(tokenId, currentOwner);
+        }
         IERC721(hederaTokenAddress).approve(to, tokenId);
     }
+
+    /**
+     * @dev Owner-only operator approval for treasury-held (or future) tokens.
+     * Optional policy: forbid pre-approval if treasury empty (uncomment guard).
+     */
     function setApprovalForAll(
         address operator,
         bool approved
-    ) external override onlyInitialized {
+    ) external override onlyInitialized onlyOwner {
+        if (IERC721(hederaTokenAddress).balanceOf(address(this)) == 0) {
+            revert WrapperSetApprovalOnlyWhenContractOwns();
+        }
         IERC721(hederaTokenAddress).setApprovalForAll(operator, approved);
+        emit WrapperOperatorSet(operator, approved);
     }
+
+    /**
+     * @dev Owner-only orchestrated transfer:
+     *  - If treasury owns token: direct distribution (from must be address(this)).
+     *  - If user owns token: wrapper must have underlying approval/operator already.
+     * Users do *not* call this themselves; they simply approve underlying,
+     * then backend / owner triggers this.
+     */
     function transferFrom(
         address from,
         address to,
         uint256 tokenId
-    ) public override onlyInitialized {
+    ) public override onlyInitialized onlyOwner {
+        address actualOwner = IERC721(hederaTokenAddress).ownerOf(tokenId);
+
+        if (actualOwner == address(this)) {
+            // Treasury distribution
+            if (from != address(this)) {
+                // Normalize / enforce correct "from"
+                from = address(this);
+            }
+            IERC721(hederaTokenAddress).transferFrom(from, to, tokenId);
+            emit TreasuryTransfer(from, to, tokenId);
+            return;
+        }
+
+        // User-owned path: require wrapper authorized (underlying approval/operator)
+        if (!_isWrapperAuthorized(tokenId)) {
+            revert WrapperTransferNotAuthorized(tokenId, actualOwner);
+        }
+
+        // 'from' must be the actual owner in this branch
+        if (from != actualOwner) {
+            revert WrapperTransferNotAuthorized(tokenId, actualOwner);
+        }
+
         IERC721(hederaTokenAddress).transferFrom(from, to, tokenId);
     }
+
     function safeTransferFrom(
         address from,
         address to,
         uint256 tokenId
     ) external override onlyInitialized {
+        // Delegate to guarded transfer (still owner-only because transferFrom is owner-only)
         transferFrom(from, to, tokenId);
     }
+
     function safeTransferFrom(
         address from,
         address to,
@@ -265,9 +334,10 @@ abstract contract HTS721Initializable is
         transferFrom(from, to, tokenId);
     }
 
-    // ---------------------------------------------------------------------
-    // HTS Native Functions
-    // ---------------------------------------------------------------------
+    /* =========================================================
+                         HTS NATIVE (ASSOC)
+       ========================================================= */
+
     function associate() external onlyInitialized {
         int32 rc = int32(uint32(IHRC719(hederaTokenAddress).associate()));
         if (rc != SUCCESS && rc != TOKEN_ALREADY_ASSOCIATED)
@@ -276,13 +346,15 @@ abstract contract HTS721Initializable is
 
     function dissociate() external onlyInitialized {
         int32 rc = int32(uint32(IHRC719(hederaTokenAddress).dissociate()));
-        if (rc != SUCCESS && rc != TOKEN_NOT_ASSOCIATED)
+        // TOKEN_NOT_ASSOCIATED is network-specific; treat any non-success except that as failure
+        // If you have a constant, use it. Here we allow rc == SUCCESS only.
+        if (rc != SUCCESS)
             revert HtsCallFailed(IHRC719.dissociate.selector, rc);
     }
 
-    // ---------------------------------------------------------------------
-    // Internal Mint
-    // ---------------------------------------------------------------------
+    /* =========================================================
+                              INTERNAL MINT
+       ========================================================= */
     function _mint(
         address to,
         bytes calldata metadata
@@ -293,15 +365,15 @@ abstract contract HTS721Initializable is
         bytes memory m = metadata.length == 0
             ? DEFAULT_METADATA
             : bytes(metadata);
-        bytes[] memory meta = new bytes[](1);
-        meta[0] = m;
+        bytes[] memory metaArr = new bytes[](1);
+        metaArr[0] = m;
 
         (bool ok, bytes memory result) = HTS_PRECOMPILE_ADDRESS.call(
             abi.encodeWithSelector(
                 IHederaTokenService.mintToken.selector,
                 hederaTokenAddress,
                 int64(0),
-                meta
+                metaArr
             )
         );
         if (!ok)
@@ -309,6 +381,7 @@ abstract contract HTS721Initializable is
                 IHederaTokenService.mintToken.selector,
                 int32(-1)
             );
+
         (int32 rc, , int64[] memory serials) = abi.decode(
             result,
             (int32, int64, int64[])
@@ -318,14 +391,46 @@ abstract contract HTS721Initializable is
 
         uint256 tokenId = uint256(uint64(serials[0]));
         _lastMintedSerial = tokenId;
+
+        // Treasury owns it first; then we decide to transfer.
         IERC721(hederaTokenAddress).transferFrom(address(this), to, tokenId);
+
         emit Minted(to, tokenId);
         return tokenId;
     }
 
-    // ---------------------------------------------------------------------
-    // Key Builders
-    // ---------------------------------------------------------------------
+    /* =========================================================
+                            AUTH HELPERS
+       ========================================================= */
+
+    /**
+     * @dev Returns true if the wrapper (this contract) is authorized to move tokenId at the underlying layer.
+     *      Equivalent concept to "isApprovedOrOwner(wrapper, tokenId)".
+     */
+    function _isWrapperAuthorized(
+        uint256 tokenId
+    ) internal view returns (bool) {
+        address owner_ = IERC721(hederaTokenAddress).ownerOf(tokenId);
+        if (owner_ == address(this)) return true; // treasury owned
+        // direct approval
+        address approved = IERC721(hederaTokenAddress).getApproved(tokenId);
+        if (approved == address(this)) return true;
+        // operator approval
+        if (IERC721(hederaTokenAddress).isApprovedForAll(owner_, address(this)))
+            return true;
+        return false;
+    }
+
+    /**
+     * @notice Convenience helper for integrators (underlying token address).
+     */
+    function underlying() external view returns (address) {
+        return hederaTokenAddress;
+    }
+
+    /* =========================================================
+                          KEY BUILDERS
+       ========================================================= */
     function _buildContractKeys(
         InitKeys memory cfg
     ) internal view returns (IHederaTokenService.TokenKey[] memory arr) {
@@ -459,9 +564,9 @@ abstract contract HTS721Initializable is
             );
     }
 
-    // ---------------------------------------------------------------------
-    // ERC165
-    // ---------------------------------------------------------------------
+    /* =========================================================
+                             ERC165
+       ========================================================= */
     function supportsInterface(
         bytes4 interfaceId
     ) public view virtual override(ERC165, IERC165) returns (bool) {
@@ -471,6 +576,9 @@ abstract contract HTS721Initializable is
             super.supportsInterface(interfaceId);
     }
 
+    /* =========================================================
+                             UTIL
+       ========================================================= */
     function _toI64(uint256 x) internal pure returns (int64) {
         if (x > INT64_MAX) revert CastOverflow();
         return int64(uint64(x));

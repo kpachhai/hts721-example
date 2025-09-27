@@ -5,7 +5,7 @@ const { ethers } = await network.connect({ network: "testnet" });
 
 async function main() {
   // Replace with your deployed contract address
-  const contractAddress = "0x4204932a79B59C0B79E460eA34376e5dD833667a";
+  const contractAddress = "0x6a59eA7DC16f25F8e47582c852fc50292Fc11c33";
 
   const [owner] = await ethers.getSigners();
   console.log("Owner:", owner.address);

@@ -5,7 +5,7 @@ const { ethers } = await network.connect({ network: "testnet" });
 
 async function main() {
   // Replace with your deployed contract address
-  const contractAddress = "0x7B25813e06B9195e081D3C6728933c54d581b146";
+  const contractAddress = "0x38aB09cB0D19A109CD8eea263C255fF6e5dd970c";
 
   const [caller] = await ethers.getSigners();
   console.log("Caller:", caller.address);
@@ -18,7 +18,6 @@ async function main() {
   );
 
   // Mint a few tokens
-  // Mint new token
   // First, need to associate the token with caller's account on Hedera
   const assocTx = await c.associate();
   await assocTx.wait();

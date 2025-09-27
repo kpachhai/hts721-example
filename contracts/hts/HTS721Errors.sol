@@ -13,3 +13,8 @@ error NotInitialized();
 error LengthMismatch();
 error EnumerationTooCostly();
 error IndexOutOfBounds();
+
+// Wrapper guard errors
+error WrapperApproveOnlyWhenContractOwns(uint256 tokenId, address actualOwner);
+error WrapperTransferNotAuthorized(uint256 tokenId, address actualOwner);
+error WrapperSetApprovalOnlyWhenContractOwns();
