@@ -1,20 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.28;
 
-error ZeroAddress();
-error HtsCallFailed(bytes4 selector, int32 rc);
-error TokenCreationFailed();
-error MetadataTooLarge();
-error TokenNotCreated();
-error CastOverflow();
-error NotAuthorized();
+error NotOwner();
 error AlreadyInitialized();
 error NotInitialized();
-error LengthMismatch();
+error ZeroAddress();
+error TokenCreationFailed();
+error HtsCallFailed(bytes4 sel, int32 rc);
+error MetadataTooLarge();
+error CastOverflow();
+error TokenNotCreated();
 error EnumerationTooCostly();
 error IndexOutOfBounds();
-
-// Wrapper guard errors
-error WrapperApproveOnlyWhenContractOwns(uint256 tokenId, address actualOwner);
-error WrapperTransferNotAuthorized(uint256 tokenId, address actualOwner);
-error WrapperSetApprovalOnlyWhenContractOwns();

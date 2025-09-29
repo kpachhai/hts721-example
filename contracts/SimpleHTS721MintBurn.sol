@@ -2,18 +2,13 @@
 pragma solidity ^0.8.28;
 
 import "./hts/extensions/HTS721MintBurn.sol";
-import "./hts/extensions/HTS721Enumerable.sol";
 import "./hts/extensions/HTS721Management.sol";
 
 /**
  * @dev Adds supply key driven mint/burn + management operations.
  * Ensure keyMask includes SUPPLY (and other needed keys) during initialize().
  */
-contract SimpleHTS721Enumerable is
-    HTS721MintBurn,
-    HTS721Enumerable,
-    HTS721Management
-{
+contract SimpleHTS721MintBurn is HTS721MintBurn, HTS721Management {
     constructor() HTS721Core() {}
 
     // Example convenience:

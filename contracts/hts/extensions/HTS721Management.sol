@@ -1,112 +1,107 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.28;
 
-import "../HTS721Initializable.sol";
+import "../HTS721Core.sol";
+import "../interfaces/IHTS721Manage.sol";
+import "../HTS721Errors.sol";
 import {IHederaTokenService} from "@hashgraph/smart-contracts/contracts/system-contracts/hedera-token-service/IHederaTokenService.sol";
-import {HtsCallFailed, NotAuthorized} from "../HTS721Errors.sol";
 
 /**
- * @title HTS721Management
- * @notice Adds operational HTS controls that require the relevant keys:
- *         KYC, Freeze, Unfreeze, Pause, Unpause, Wipe, Custom Fee Updates.
- * @dev    Authorization:
- *         - default: onlyOwner (override _requireManagementAuth() for custom governance)
- *         - relies on HTS keys having been initialized to this contract (contractId key variant).
+ * @dev Management (KYC/Freeze/Pause/Wipe/Royalties/Delete).
  */
-abstract contract HTS721Management is HTS721Initializable {
-    modifier onlyManagementAuth() {
-        _requireManagementAuth();
+abstract contract HTS721Management is HTS721Core, IHTS721Manage {
+    modifier onlyMgr() {
+        if (msg.sender != owner()) revert NotOwner();
         _;
     }
 
-    function _requireManagementAuth() internal view virtual {
-        if (msg.sender != owner()) revert NotAuthorized();
-    }
-
-    // ----------------------- KYC -----------------------
-    function grantKyc(
-        address account
-    ) external onlyInitialized onlyManagementAuth {
+    function grantKyc(address a) external onlyInit onlyMgr {
         _call(
             IHederaTokenService.grantTokenKyc.selector,
-            abi.encode(hederaTokenAddress, account)
+            abi.encode(hederaTokenAddress, a)
         );
     }
-    function revokeKyc(
-        address account
-    ) external onlyInitialized onlyManagementAuth {
+    function revokeKyc(address a) external onlyInit onlyMgr {
         _call(
             IHederaTokenService.revokeTokenKyc.selector,
-            abi.encode(hederaTokenAddress, account)
+            abi.encode(hederaTokenAddress, a)
         );
     }
-
-    // ----------------------- Freeze -----------------------
-    function freeze(
-        address account
-    ) external onlyInitialized onlyManagementAuth {
+    function freeze(address a) external onlyInit onlyMgr {
         _call(
             IHederaTokenService.freezeToken.selector,
-            abi.encode(hederaTokenAddress, account)
+            abi.encode(hederaTokenAddress, a)
         );
     }
-    function unfreeze(
-        address account
-    ) external onlyInitialized onlyManagementAuth {
+    function unfreeze(address a) external onlyInit onlyMgr {
         _call(
             IHederaTokenService.unfreezeToken.selector,
-            abi.encode(hederaTokenAddress, account)
+            abi.encode(hederaTokenAddress, a)
         );
     }
-
-    // ----------------------- Pause -----------------------
-    function pause() external onlyInitialized onlyManagementAuth {
+    function pause() external onlyInit onlyMgr {
         _call(
             IHederaTokenService.pauseToken.selector,
             abi.encode(hederaTokenAddress)
         );
     }
-    function unpause() external onlyInitialized onlyManagementAuth {
+    function unpause() external onlyInit onlyMgr {
         _call(
             IHederaTokenService.unpauseToken.selector,
             abi.encode(hederaTokenAddress)
         );
     }
-
-    // ----------------------- Wipe (NFT) -----------------------
     function wipe(
-        address account,
+        address a,
         int64[] calldata serials
-    ) external onlyInitialized onlyManagementAuth {
+    ) external onlyInit onlyMgr {
         _call(
             IHederaTokenService.wipeTokenAccountNFT.selector,
-            abi.encode(hederaTokenAddress, account, serials)
+            abi.encode(hederaTokenAddress, a, serials)
         );
     }
 
-    // ----------------------- Custom Fees (Royalties) -----------------------
     function updateNftRoyaltyFees(
-        IHederaTokenService.FixedFee[] calldata fixedFees,
-        IHederaTokenService.RoyaltyFee[] calldata royaltyFees
-    ) external onlyInitialized onlyManagementAuth {
+        bytes calldata fixedFeesEncoded,
+        bytes calldata royaltyFeesEncoded
+    ) external onlyInit onlyMgr {
+        IHederaTokenService.FixedFee[] memory f = abi.decode(
+            fixedFeesEncoded,
+            (IHederaTokenService.FixedFee[])
+        );
+        IHederaTokenService.RoyaltyFee[] memory r = abi.decode(
+            royaltyFeesEncoded,
+            (IHederaTokenService.RoyaltyFee[])
+        );
+
         (bool ok, bytes memory res) = HTS_PRECOMPILE_ADDRESS.call(
             abi.encodeWithSelector(
                 IHederaTokenService.updateNonFungibleTokenCustomFees.selector,
                 hederaTokenAddress,
-                fixedFees,
-                royaltyFees
+                f,
+                r
             )
         );
         int32 rc = ok ? abi.decode(res, (int32)) : int32(-1);
-        if (rc != SUCCESS) {
+        if (rc != SUCCESS)
             revert HtsCallFailed(
                 IHederaTokenService.updateNonFungibleTokenCustomFees.selector,
                 rc
             );
-        }
     }
 
-    // ----------------------- Internal Dispatcher -----------------------
+    function deleteToken() external onlyInit onlyMgr {
+        (bool ok, bytes memory res) = HTS_PRECOMPILE_ADDRESS.call(
+            abi.encodeWithSelector(
+                IHederaTokenService.deleteToken.selector,
+                hederaTokenAddress
+            )
+        );
+        int32 rc = ok ? abi.decode(res, (int32)) : int32(-1);
+        if (rc != SUCCESS)
+            revert HtsCallFailed(IHederaTokenService.deleteToken.selector, rc);
+    }
+
     function _call(bytes4 sel, bytes memory args) internal {
         (bool ok, bytes memory res) = HTS_PRECOMPILE_ADDRESS.call(
             abi.encodePacked(sel, args)

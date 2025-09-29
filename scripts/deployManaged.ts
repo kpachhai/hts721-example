@@ -1,6 +1,9 @@
 import { network } from "hardhat";
 
-// Usage: npx hardhat run scripts/deployManaged.ts --network testnet
+/**
+ * Deploys SimpleHTS721Managed (mint/burn + management + neutralizer).
+ * Usage: npx hardhat run scripts/deploy_managed.ts --network testnet
+ */
 const { ethers } = await network.connect({ network: "testnet" });
 
 async function main() {
@@ -13,33 +16,36 @@ async function main() {
   );
   const c = await Factory.deploy();
   await c.waitForDeployment();
-  console.log("SimpleHTS721Managed contract:", await c.getAddress());
+  const addr = await c.getAddress();
+  console.log("SimpleHTS721Managed deployed at:", addr);
 
-  // Include KYC key because we will grant KYC in the interaction script.
+  const ADMIN = 1,
+    KYC = 2,
+    FREEZE = 4,
+    WIPE = 8,
+    SUPPLY = 16,
+    FEE = 32,
+    PAUSE = 64;
+  const keyMask = ADMIN | KYC | FREEZE | WIPE | SUPPLY | FEE | PAUSE; // 127
+
   const initTx = await c.initialize(
-    "ManagedToken",
-    "MGT",
-    "managed demo",
     {
-      admin: true,
-      kyc: true,
-      freeze: true,
-      wipe: true,
-      supply: true,
-      fee: true,
-      pause: true
+      name: "ManagedToken",
+      symbol: "MGT",
+      memo: "managed demo",
+      keyMask,
+      freezeDefault: false,
+      autoRenewAccount: deployer.address,
+      autoRenewPeriod: 0
     },
-    false,
-    ethers.ZeroAddress,
-    0,
-    { value: ethers.parseEther("15"), gasLimit: 400_000 }
+    {
+      value: ethers.parseEther("10"),
+      gasLimit: 400_000
+    }
   );
   await initTx.wait();
-  console.log("Initialized token:", await c.hederaTokenAddress());
-
-  console.log(
-    "Deployment complete. Use interactManaged.ts to exercise management features."
-  );
+  console.log("Underlying HTS token:", await c.hederaTokenAddress());
+  console.log("Managed deploy complete.");
 }
 
 main().catch(console.error);

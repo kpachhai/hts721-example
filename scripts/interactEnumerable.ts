@@ -1,44 +1,64 @@
 import { network } from "hardhat";
 
-// Usage: npx hardhat run scripts/interactEnumerable.ts --network testnet
+/**
+ * Interacts with SimpleHTSEnumerable:
+ *  - Mint several tokens
+ *  - Enumerate via tokenByIndex
+ *  - tokensOfOwner sampling
+ *  - Underlying transfer effect on enumeration
+ *
+ * Usage: npx hardhat run scripts/interact_enumerable.ts --network testnet
+ */
 const { ethers } = await network.connect({ network: "testnet" });
 
+const CONTRACT_NAME = "SimpleHTS721Enumerable";
+
 async function main() {
-  // Replace with your deployed contract address
-  const contractAddress = "0x38aB09cB0D19A109CD8eea263C255fF6e5dd970c";
+  const contractAddress = "0xaC0828a087CAb75eb371DD81EB06045049e9d2eA"; // replace with your deployed mint/burn contract address
+  const [owner] = await ethers.getSigners();
 
-  const [caller] = await ethers.getSigners();
-  console.log("Caller:", caller.address);
-  console.log("Contract:", contractAddress);
+  console.log("Owner:", owner.address);
+  console.log(`${CONTRACT_NAME}:`, contractAddress);
 
-  const c = await ethers.getContractAt(
-    "SimpleHTS721Enumerable",
-    contractAddress,
-    caller
+  const c = await ethers.getContractAt(CONTRACT_NAME, contractAddress, owner);
+  const underlying = await c.hederaTokenAddress();
+  console.log("Underlying HTS token:", underlying);
+
+  // Mint 3 to owner
+  for (let i = 0; i < 3; i++) {
+    const tx = await c.mintTo(owner.address, "0x");
+    await tx.wait();
+    console.log(`Minted serial #${i + 1} to owner:`, tx.hash);
+  }
+
+  // Enumerate first 3 (tokenByIndex)
+  for (let i = 0; i < 3; i++) {
+    try {
+      const id = await c.tokenByIndex(i);
+      console.log(`tokenByIndex(${i}) => serial ${id.toString()}`);
+    } catch {
+      console.log(`tokenByIndex(${i}) failed (stop).`);
+      break;
+    }
+  }
+
+  // tokensOfOwner for owner (scan limit example: 50)
+  const tokensA = await c.tokensOfOwner(owner.address, 50);
+  console.log(
+    "tokensOfOwner(owner):",
+    tokensA.map((x: any) => x.toString())
   );
 
-  // Mint a few tokens
-  // First, need to associate the token with caller's account on Hedera
-  const assocTx = await c.associate();
-  await assocTx.wait();
-  console.log("Associated token with caller's account. Tx:", assocTx.hash);
-
-  // Now mint
-  for (let i = 0; i < 3; i++) {
-    const tx = await c.mintTo(caller.address, "0x", {
-      gasLimit: 400_000
-    });
-    await tx.wait();
-    console.log(`Minted #${i + 1} tx:`, tx.hash);
+  // Optional pause test (if PAUSE key included)
+  try {
+    const p = await c.pause();
+    await p.wait();
+    console.log("Paused collection:", p.hash);
+  } catch (e: any) {
+    console.log("pause() failed or not keyed:", e.message || e);
   }
 
-  const total = await c.totalSupply();
-  console.log("totalSupply:", total.toString());
-
-  for (let i = 0; i < Number(total); i++) {
-    const tokenId = await c.tokenByIndex(i);
-    console.log("tokenByIndex", i, "=>", tokenId.toString());
-  }
+  console.log("Enumerable interaction complete.");
 }
 
 main().catch(console.error);

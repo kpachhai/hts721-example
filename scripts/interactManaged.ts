@@ -1,104 +1,109 @@
 import { network } from "hardhat";
 
-// Usage: npx hardhat run scripts/interactManaged.ts --network testnet
+/**
+ * Interacts with SimpleHTS721Managed:
+ *  - User association (underlying)
+ *  - grantKyc / freeze / pause
+ *  - mint, neutralize keys, burnFrom, delete attempt
+ *
+ * Usage: npx hardhat run scripts/interact_managed.ts --network testnet
+ */
 const { ethers } = await network.connect({ network: "testnet" });
 
 async function main() {
-  // Replace with your deployed contract address
-  const contractAddress = "0x6a59eA7DC16f25F8e47582c852fc50292Fc11c33";
+  const contractAddress = "0xAf59D38509b5e6E064Aa41c3B19b07CDB71B4432"; // replace with your deployed managed contract address
 
   const [owner] = await ethers.getSigners();
   console.log("Owner:", owner.address);
   console.log("Managed contract:", contractAddress);
+
   const c = await ethers.getContractAt(
     "SimpleHTS721Managed",
     contractAddress,
     owner
   );
+  const underlying = await c.hederaTokenAddress();
+  console.log("Underlying HTS token:", underlying);
 
-  /*
-  // First, need to associate the token with caller's account on Hedera
-  const tokenAssociateAbi = ["function associate()"];
-  const token = new ethers.Contract(
-    await c.hederaTokenAddress(),
-    tokenAssociateAbi,
+  // User associates directly with underlying token (IHRC719 associate())
+  const userAssociate = new ethers.Contract(
+    underlying,
+    ["function associate() external returns (int32)"],
     owner
   );
-  const assocTx = await token.associate({ gasLimit: 800_000 });
-  await assocTx.wait();
-  console.log("Associated token with caller's account. Tx:", assocTx.hash);
-
-  // 1. Grant KYC to owner (if KYC key exists and required)
-  //try {
-  const kycTx = await c.grantKyc(owner.address);
-  await kycTx.wait();
-  console.log("Granted KYC to owner. Tx:", kycTx.hash);
-
-  // 2. Mint first token
-  const mint1 = await c.mintTo(owner.address, "0x", {
-    gasLimit: 400_000
-  });
-  await mint1.wait();
-  console.log("Minted tokenId 1. Tx:", mint1.hash);
-
-  // 3. Pause the token
   try {
-    const pauseTx = await c.pause();
-    await pauseTx.wait();
-    console.log("Paused token. Tx:", pauseTx.hash);
-  } catch (e) {
+    const assoc = await userAssociate.associate({ gasLimit: 800_000 });
+    await assoc.wait();
+    console.log("User associated underlying token:", assoc.hash);
+  } catch (e: any) {
     console.log(
-      "Pause failed (pause key might not exist):",
-      (e as any).message
+      "Associate skipped/failure (maybe already associated):",
+      e.message || e
     );
   }
 
-  // 4. Attempt second mint while paused (expect failure if pause key works)
-  let pausedMintFailed = false;
+  // grantKyc (if KYC key present)
   try {
-    const mintWhilePaused = await c.mintTo(owner.address, "0x", {
-      gasLimit: 400_000
-    });
-    await mintWhilePaused.wait();
-    console.log("Unexpected: Mint succeeded while paused.");
-  } catch {
-    pausedMintFailed = true;
-    console.log("Mint while paused failed as expected.");
+    const kycTx = await c.grantKyc(owner.address);
+    await kycTx.wait();
+    console.log("Granted KYC:", kycTx.hash);
+  } catch (e: any) {
+    console.log("grantKyc failed or not needed:", e.message || e);
   }
 
-  // 5. Unpause
-  if (pausedMintFailed) {
+  // Mint serial #1 to user
+  const mint1 = await c.mintTo(owner.address, "0x");
+  await mint1.wait();
+  console.log("Minted serial #1 to user:", mint1.hash);
+
+  // Pause
+  let paused = false;
+  try {
+    const p = await c.pause();
+    await p.wait();
+    paused = true;
+    console.log("Paused collection:", p.hash);
+  } catch (e: any) {
+    console.log("pause() failed or key missing:", e.message || e);
+  }
+
+  // Attempt mint during pause (expect fail if paused)
+  if (paused) {
     try {
-      const unpauseTx = await c.unpause();
-      await unpauseTx.wait();
-      console.log("Unpaused token. Tx:", unpauseTx.hash);
-    } catch (e) {
-      console.log("Unpause failed:", (e as any).message);
+      const m2 = await c.mintTo(owner.address, "0x");
+      await m2.wait();
+      console.log("Unexpected: mint succeeded while paused.");
+    } catch {
+      console.log("Mint while paused failed (expected).");
     }
   }
 
-  // 6. Mint second token
-  const mint2 = await c.mintTo(owner.address, "0x", {
-    gasLimit: 400_000
-  });
-  await mint2.wait();
-  console.log("Minted tokenId 2. Tx:", mint2.hash);
+  // Unpause
+  if (paused) {
+    try {
+      const up = await c.unpause();
+      await up.wait();
+      console.log("Unpaused:", up.hash);
+    } catch (e: any) {
+      console.log("unpause failed:", e.message || e);
+    }
+  }
 
-  // 7. Freeze & unfreeze owner (if freeze key present)
+  // Freeze/unfreeze user (if FREEZE key)
   try {
-    const freezeTx = await c.freeze(owner.address);
-    await freezeTx.wait();
-    console.log("Froze owner. Tx:", freezeTx.hash);
+    const fr = await c.freeze(owner.address);
+    await fr.wait();
+    console.log("Froze user:", fr.hash);
 
-    const unfreezeTx = await c.unfreeze(owner.address);
-    await unfreezeTx.wait();
-    console.log("Unfroze owner. Tx:", unfreezeTx.hash);
-  } catch (e) {
-    console.log("Freeze/unfreeze skipped:", (e as any).message);
-  } */
+    const uf = await c.unfreeze(owner.address);
+    await uf.wait();
+    console.log("Unfroze user:", uf.hash);
+  } catch (e: any) {
+    console.log("freeze/unfreeze skipped:", e.message || e);
+  }
 
-  // 8. Demonstrate dropping keys (e.g., drop freeze and wipe for decentralization)
-  const dropTx = await c.neutralizeKeysRandom(
+  // Neutralize wipe + freeze keys
+  const neut = await c.neutralizeKeysRandom(
     {
       admin: false,
       kyc: false,
@@ -108,10 +113,40 @@ async function main() {
       fee: false,
       pause: false
     },
-    { gasLimit: 800_000 }
+    false
   );
-  await dropTx.wait();
-  console.log("Dropped freeze & wipe keys. Tx:", dropTx.hash);
+  await neut.wait();
+  console.log("Neutralized freeze & wipe keys:", neut.hash);
+
+  // Try freeze again (should fail)
+  try {
+    await c.freeze(owner.address);
+    console.log("Unexpected: freeze succeeded after neutralization.");
+  } catch {
+    console.log("freeze failed post-neutralization (expected).");
+  }
+
+  // burnFrom serial #1 (user must approve wrapper)
+  const userToken = new ethers.Contract(
+    underlying,
+    ["function approve(address,uint256) external"],
+    owner
+  );
+  await userToken.approve(contractAddress, 1);
+  const burn1 = await c.burnFrom(owner.address, 1);
+  await burn1.wait();
+  console.log("burnFrom #1 complete:", burn1.hash);
+
+  // Attempt deleteToken (will only succeed if all conditions satisfied)
+  try {
+    const del = await c.deleteToken();
+    await del.wait();
+    console.log("Token deleted:", del.hash);
+  } catch (e: any) {
+    console.log("deleteToken failed (likely expected):", e.message || e);
+  }
+
+  console.log("Managed interaction complete.");
 }
 
 main().catch(console.error);
