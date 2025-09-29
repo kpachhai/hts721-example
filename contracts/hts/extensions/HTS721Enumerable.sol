@@ -23,12 +23,16 @@ abstract contract HTS721Enumerable is HTS721Core {
     }
 
     function totalMinted() external view returns (uint256) {
+        // (Optional) add onlyInit if you prefer strict gating:
+        // if (!initialized) revert NotInitialized();
         return _lastSerial;
     }
 
-    // O(n) scan; do not use for large n on-chain.
-    function tokenByIndex(uint256 index) external view returns (uint256) {
+    function tokenByIndex(
+        uint256 index
+    ) external view onlyInit returns (uint256) {
         if (_lastSerial > enumerationScanLimit) revert EnumerationTooCostly();
+
         uint256 count;
         for (uint256 s = 1; s <= _lastSerial; s++) {
             try IERC721(hederaTokenAddress).ownerOf(s) returns (address o) {
@@ -38,7 +42,9 @@ abstract contract HTS721Enumerable is HTS721Core {
                         ++count;
                     }
                 }
-            } catch {}
+            } catch {
+                // ignore individual ownerOf failures on sparse serials
+            }
         }
         revert IndexOutOfBounds();
     }
@@ -46,21 +52,25 @@ abstract contract HTS721Enumerable is HTS721Core {
     function tokensOfOwner(
         address owner,
         uint256 maxScan
-    ) external view returns (uint256[] memory found) {
+    ) external view onlyInit returns (uint256[] memory found) {
         if (_lastSerial > enumerationScanLimit) revert EnumerationTooCostly();
         if (maxScan == 0 || maxScan > _lastSerial) maxScan = _lastSerial;
+
         uint256[] memory tmp = new uint256[](maxScan);
         uint256 k;
         for (uint256 s = 1; s <= maxScan; s++) {
             if (k == tmp.length) break;
             try IERC721(hederaTokenAddress).ownerOf(s) returns (address o) {
-                if (o == owner) tmp[k++] = s;
-            } catch {}
+                if (o == owner) {
+                    tmp[k++] = s;
+                }
+            } catch {
+                // ignore
+            }
         }
-        // trim
         assembly {
             mstore(tmp, k)
-        }
+        } // trim
         return tmp;
     }
 }
