@@ -16,24 +16,25 @@ async function main() {
     owner
   );
 
-  // 1. Grant KYC to owner (if KYC key exists and required)
-  //try {
-  const kycTx = await c.grantKyc(owner.address, { gasLimit: 75_000 });
-  await kycTx.wait();
-  console.log("Granted KYC to owner. Tx:", kycTx.hash);
-  /*   } catch (e) {
-    console.log(
-      "GrantKyc skipped or failed (maybe KYC key absent or not required):",
-      (e as any).message
-    );
-  } */
-
-  // 2. Mint first token
+  /*
   // First, need to associate the token with caller's account on Hedera
-  const assocTx = await c.associate();
+  const tokenAssociateAbi = ["function associate()"];
+  const token = new ethers.Contract(
+    await c.hederaTokenAddress(),
+    tokenAssociateAbi,
+    owner
+  );
+  const assocTx = await token.associate({ gasLimit: 800_000 });
   await assocTx.wait();
   console.log("Associated token with caller's account. Tx:", assocTx.hash);
-  // Now mint
+
+  // 1. Grant KYC to owner (if KYC key exists and required)
+  //try {
+  const kycTx = await c.grantKyc(owner.address);
+  await kycTx.wait();
+  console.log("Granted KYC to owner. Tx:", kycTx.hash);
+
+  // 2. Mint first token
   const mint1 = await c.mintTo(owner.address, "0x", {
     gasLimit: 400_000
   });
@@ -94,11 +95,11 @@ async function main() {
     console.log("Unfroze owner. Tx:", unfreezeTx.hash);
   } catch (e) {
     console.log("Freeze/unfreeze skipped:", (e as any).message);
-  }
+  } */
 
   // 8. Demonstrate dropping keys (e.g., drop freeze and wipe for decentralization)
-  try {
-    const dropTx = await c.dropKeys({
+  const dropTx = await c.neutralizeKeysRandom(
+    {
       admin: false,
       kyc: false,
       freeze: true,
@@ -106,14 +107,11 @@ async function main() {
       supply: false,
       fee: false,
       pause: false
-    });
-    await dropTx.wait();
-    console.log("Dropped freeze & wipe keys. Tx:", dropTx.hash);
-  } catch (e) {
-    console.log("dropKeys failed:", (e as any).message);
-  }
-
-  console.log("Managed interaction demo complete.");
+    },
+    { gasLimit: 800_000 }
+  );
+  await dropTx.wait();
+  console.log("Dropped freeze & wipe keys. Tx:", dropTx.hash);
 }
 
 main().catch(console.error);

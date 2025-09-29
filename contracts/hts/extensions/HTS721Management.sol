@@ -7,7 +7,11 @@ import {HtsCallFailed, NotAuthorized} from "../HTS721Errors.sol";
 
 /**
  * @title HTS721Management
- * @notice Operational controls: KYC, Freeze, Pause, Wipe, Royalty Fees
+ * @notice Adds operational HTS controls that require the relevant keys:
+ *         KYC, Freeze, Unfreeze, Pause, Unpause, Wipe, Custom Fee Updates.
+ * @dev    Authorization:
+ *         - default: onlyOwner (override _requireManagementAuth() for custom governance)
+ *         - relies on HTS keys having been initialized to this contract (contractId key variant).
  */
 abstract contract HTS721Management is HTS721Initializable {
     modifier onlyManagementAuth() {
@@ -19,30 +23,43 @@ abstract contract HTS721Management is HTS721Initializable {
         if (msg.sender != owner()) revert NotAuthorized();
     }
 
-    function grantKyc(address a) external onlyInitialized onlyManagementAuth {
+    // ----------------------- KYC -----------------------
+    function grantKyc(
+        address account
+    ) external onlyInitialized onlyManagementAuth {
         _call(
             IHederaTokenService.grantTokenKyc.selector,
-            abi.encode(hederaTokenAddress, a)
+            abi.encode(hederaTokenAddress, account)
         );
     }
-    function revokeKyc(address a) external onlyInitialized onlyManagementAuth {
+    function revokeKyc(
+        address account
+    ) external onlyInitialized onlyManagementAuth {
         _call(
             IHederaTokenService.revokeTokenKyc.selector,
-            abi.encode(hederaTokenAddress, a)
+            abi.encode(hederaTokenAddress, account)
         );
     }
-    function freeze(address a) external onlyInitialized onlyManagementAuth {
+
+    // ----------------------- Freeze -----------------------
+    function freeze(
+        address account
+    ) external onlyInitialized onlyManagementAuth {
         _call(
             IHederaTokenService.freezeToken.selector,
-            abi.encode(hederaTokenAddress, a)
+            abi.encode(hederaTokenAddress, account)
         );
     }
-    function unfreeze(address a) external onlyInitialized onlyManagementAuth {
+    function unfreeze(
+        address account
+    ) external onlyInitialized onlyManagementAuth {
         _call(
             IHederaTokenService.unfreezeToken.selector,
-            abi.encode(hederaTokenAddress, a)
+            abi.encode(hederaTokenAddress, account)
         );
     }
+
+    // ----------------------- Pause -----------------------
     function pause() external onlyInitialized onlyManagementAuth {
         _call(
             IHederaTokenService.pauseToken.selector,
@@ -55,16 +72,19 @@ abstract contract HTS721Management is HTS721Initializable {
             abi.encode(hederaTokenAddress)
         );
     }
+
+    // ----------------------- Wipe (NFT) -----------------------
     function wipe(
-        address a,
+        address account,
         int64[] calldata serials
     ) external onlyInitialized onlyManagementAuth {
         _call(
             IHederaTokenService.wipeTokenAccountNFT.selector,
-            abi.encode(hederaTokenAddress, a, serials)
+            abi.encode(hederaTokenAddress, account, serials)
         );
     }
 
+    // ----------------------- Custom Fees (Royalties) -----------------------
     function updateNftRoyaltyFees(
         IHederaTokenService.FixedFee[] calldata fixedFees,
         IHederaTokenService.RoyaltyFee[] calldata royaltyFees
@@ -78,13 +98,15 @@ abstract contract HTS721Management is HTS721Initializable {
             )
         );
         int32 rc = ok ? abi.decode(res, (int32)) : int32(-1);
-        if (rc != SUCCESS)
+        if (rc != SUCCESS) {
             revert HtsCallFailed(
                 IHederaTokenService.updateNonFungibleTokenCustomFees.selector,
                 rc
             );
+        }
     }
 
+    // ----------------------- Internal Dispatcher -----------------------
     function _call(bytes4 sel, bytes memory args) internal {
         (bool ok, bytes memory res) = HTS_PRECOMPILE_ADDRESS.call(
             abi.encodePacked(sel, args)
