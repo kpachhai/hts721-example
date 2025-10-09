@@ -6,27 +6,27 @@ This repository demonstrates a modular, low‑bytecode approach to creating and 
 
 ## Table of Contents
 
-1. [Motivation](#motivation)  
-2. [Architecture Overview](#architecture-overview)  
-3. [Key Bits (keyMask)](#key-bits-keymask)  
-4. [Contracts & Extensions](#contracts--extensions)  
-5. [Simple Deployable Variants](#simple-deployable-variants)  
-6. [Initialization (InitConfig)](#initialization-initconfig)  
-7. [Mint / Burn Workflows](#mint--burn-workflows)  
-8. [Management (KYC / Freeze / Pause / Wipe / Fees / Delete)](#management-kyc--freeze--pause--wipe--fees--delete)  
-9. [Key Neutralization](#key-neutralization)  
-10. [Enumeration Caveat](#enumeration-caveat)  
-11. [Scripts (Deploy & Interact)](#scripts-deploy--interact)  
-12. [Common Failure Codes](#common-failure-codes)  
-13. [Security & Decentralization Path](#security--decentralization-path)  
-14. [Development](#development)  
+1. [Motivation](#motivation)
+2. [Architecture Overview](#architecture-overview)
+3. [Key Bits (keyMask)](#key-bits-keymask)
+4. [Contracts & Extensions](#contracts--extensions)
+5. [Simple Deployable Variants](#simple-deployable-variants)
+6. [Initialization (InitConfig)](#initialization-initconfig)
+7. [Mint / Burn Workflows](#mint--burn-workflows)
+8. [Management (KYC / Freeze / Pause / Wipe / Fees / Delete)](#management-kyc--freeze--pause--wipe--fees--delete)
+9. [Key Neutralization](#key-neutralization)
+10. [Enumeration Caveat](#enumeration-caveat)
+11. [Scripts (Deploy & Interact)](#scripts-deploy--interact)
+12. [Common Failure Codes](#common-failure-codes)
+13. [Security & Decentralization Path](#security--decentralization-path)
+14. [Development](#development)
 15. [License](#license)
 
 ---
 
 ## Motivation
 
-Typical “wrapper” NFTs duplicate ERC‑721 logic and inflate bytecode. On Hedera, the underlying HTS NFT already exposes the canonical ERC‑721 interface. This project strips wrappers down to **the minimal surface necessary to:**
+On Hedera, the underlying HTS NFT already exposes the canonical ERC‑721 interface. This project uses wrappers to:
 
 - Create a collection (one-time initialization)
 - Mint / burn supply
@@ -61,19 +61,20 @@ Typical “wrapper” NFTs duplicate ERC‑721 logic and inflate bytecode. On He
 
 ## Key Bits (keyMask)
 
-| Bit | Constant | Purpose |
-|-----|----------|---------|
-| 1   | ADMIN  | Rotate keys, delete token, governance pivots |
-| 2   | KYC    | Grant / revoke KYC |
-| 4   | FREEZE | Freeze / unfreeze accounts |
-| 8   | WIPE   | Wipe NFTs from accounts |
-| 16  | SUPPLY | Mint / burn NFTs |
-| 32  | FEE    | Update custom (royalty / fixed) fees |
-| 64  | PAUSE  | Pause / unpause transfers |
+| Bit | Constant | Purpose                                      |
+| --- | -------- | -------------------------------------------- |
+| 1   | ADMIN    | Rotate keys, delete token, governance pivots |
+| 2   | KYC      | Grant / revoke KYC                           |
+| 4   | FREEZE   | Freeze / unfreeze accounts                   |
+| 8   | WIPE     | Wipe NFTs from accounts                      |
+| 16  | SUPPLY   | Mint / burn NFTs                             |
+| 32  | FEE      | Update custom (royalty / fixed) fees         |
+| 64  | PAUSE    | Pause / unpause transfers                    |
 
-> NFT creation **must** include SUPPLY or HTS returns error: TOKEN_HAS_NO_SUPPLY_KEY.
+> NFT creation **must** include SUPPLY or HTS returns error
 
 Typical masks:
+
 - Core only (still needs supply) → `ADMIN | SUPPLY`
 - Mint/Burn + Pause → `ADMIN | SUPPLY | PAUSE`
 - Full management → `ADMIN | KYC | FREEZE | WIPE | SUPPLY | FEE | PAUSE`
@@ -82,27 +83,27 @@ Typical masks:
 
 ## Contracts & Extensions
 
-| File | Purpose |
-|------|---------|
-| `HTS721Core.sol` | Initialization & internal mint primitive |
-| `HTS721MintBurn.sol` | `mintTo`, `burn`, `burnFrom` |
-| `HTS721Management.sol` | KYC / Freeze / Pause / Wipe / Fees / Delete |
-| `HTS721KeyNeutralizerRandom.sol` | Irreversible key rotation (PRNG-based) |
-| `HTS721Enumerable.sol` | Naive enumeration (small collections only) |
-| `HTSCommon.sol` | Shared constants |
-| `HTS721Errors.sol` | Custom error library |
-| Interfaces (`/interfaces`) | Stable external surfaces for core, mint/burn, management |
+| File                             | Purpose                                                  |
+| -------------------------------- | -------------------------------------------------------- |
+| `HTS721Core.sol`                 | Initialization & internal mint primitive                 |
+| `HTS721MintBurn.sol`             | `mintTo`, `burn`, `burnFrom`                             |
+| `HTS721Management.sol`           | KYC / Freeze / Pause / Wipe / Fees / Delete              |
+| `HTS721KeyNeutralizerRandom.sol` | Irreversible key rotation (PRNG-based)                   |
+| `HTS721Enumerable.sol`           | Naive enumeration (small collections only)               |
+| `HTSCommon.sol`                  | Shared constants                                         |
+| `HTS721Errors.sol`               | Custom error library                                     |
+| Interfaces (`/interfaces`)       | Stable external surfaces for core, mint/burn, management |
 
 ---
 
 ## Simple Deployable Variants
 
-| Contract | Composition | Use Case |
-|----------|-------------|----------|
-| `SimpleHTS721` | Core | Governance placeholder / future upgrade |
-| `SimpleHTS721MintBurn` | Core + MintBurn (+ mgmt base) | Standard distribution + supply control |
-| `SimpleHTS721Managed` | Core + MintBurn + Management + Neutralizer | Full lifecycle w/ decentralization path |
-| `SimpleHTSEnumerable` | Core + MintBurn + Management + Enumerable | Small enumerated collections |
+| Contract               | Composition                                | Use Case                                |
+| ---------------------- | ------------------------------------------ | --------------------------------------- |
+| `SimpleHTS721`         | Core                                       | Governance placeholder / future upgrade |
+| `SimpleHTS721MintBurn` | Core + MintBurn (+ mgmt base)              | Standard distribution + supply control  |
+| `SimpleHTS721Managed`  | Core + MintBurn + Management + Neutralizer | Full lifecycle w/ decentralization path |
+| `SimpleHTSEnumerable`  | Core + MintBurn + Management + Enumerable  | Small enumerated collections            |
 
 ---
 
@@ -118,10 +119,10 @@ await wrapper.initialize(
     freezeDefault: false,
     autoRenewAccount: deployer.address(eg 0xabcd...),
     autoRenewPeriod: 0
-  }, 
-  { 
-    value: ethers.parseEther("10"), 
-    gasLimit: 400_000 
+  },
+  {
+    value: ethers.parseEther("10"),
+    gasLimit: 400_000
   }
 );
 ```
@@ -134,24 +135,24 @@ await wrapper.initialize(
 
 ## Mint / Burn Workflows
 
-| Action | Steps |
-|--------|-------|
-| Mint to user | `mintTo(user, metadata)` (wrapper supply key), wrapper transfers serial from treasury to user |
-| Burn (treasury) | `burn(serial)` (ensures treasury holds serial) |
-| Burn (user-owned) | User grants `approve(wrapper, serial)` → owner calls `burnFrom(user, serial)` |
+| Action            | Steps                                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------- |
+| Mint to user      | `mintTo(user, metadata)` (wrapper supply key), wrapper transfers serial from treasury to user |
+| Burn (treasury)   | `burn(serial)` (ensures treasury holds serial)                                                |
+| Burn (user-owned) | User grants `approve(wrapper, serial)` → owner calls `burnFrom(user, serial)`                 |
 
 ---
 
 ## Management (KYC / Freeze / Pause / Wipe / Fees / Delete)
 
-| Function | Requires Key | Notes |
-|----------|--------------|-------|
-| `grantKyc / revokeKyc` | KYC | Reverts if token not associated w/ account |
-| `freeze / unfreeze` | FREEZE | Blocks transfers while frozen |
-| `pause / unpause` | PAUSE | Pause blocks *all* token transfers (HTS-level) |
-| `wipe(account, serials[])` | WIPE | Destroys specified serials from account |
-| `updateNftRoyaltyFees(fixedBytes, royaltyBytes)` | FEE | ABI-packed arrays reduce code size |
-| `deleteToken()` | ADMIN | All NFTs must be gone / prerequisites satisfied |
+| Function                                         | Requires Key | Notes                                           |
+| ------------------------------------------------ | ------------ | ----------------------------------------------- |
+| `grantKyc / revokeKyc`                           | KYC          | Reverts if token not associated w/ account      |
+| `freeze / unfreeze`                              | FREEZE       | Blocks transfers while frozen                   |
+| `pause / unpause`                                | PAUSE        | Pause blocks _all_ token transfers (HTS-level)  |
+| `wipe(account, serials[])`                       | WIPE         | Destroys specified serials from account         |
+| `updateNftRoyaltyFees(fixedBytes, royaltyBytes)` | FEE          | ABI-packed arrays reduce code size              |
+| `deleteToken()`                                  | ADMIN        | All NFTs must be gone / prerequisites satisfied |
 
 ---
 
@@ -159,11 +160,11 @@ await wrapper.initialize(
 
 `HTS721Enumerable` linearly scans `1.._lastSerial`.
 
-| Function | Complexity | Warning |
-|----------|------------|---------|
-| `tokenByIndex(i)` | O(lastSerial) worst-case | Use only for small sets |
-| `tokensOfOwner(owner, maxScan)` | O(maxScan) | Provide sensible `maxScan` |
-| `setEnumerationScanLimit(limit)` | Admin guard | Prevent pathological gas usage |
+| Function                         | Complexity               | Warning                        |
+| -------------------------------- | ------------------------ | ------------------------------ |
+| `tokenByIndex(i)`                | O(lastSerial) worst-case | Use only for small sets        |
+| `tokensOfOwner(owner, maxScan)`  | O(maxScan)               | Provide sensible `maxScan`     |
+| `setEnumerationScanLimit(limit)` | Admin guard              | Prevent pathological gas usage |
 
 Use an off-chain indexer (Mirror Node / custom service) for large collections.
 
@@ -171,16 +172,16 @@ Use an off-chain indexer (Mirror Node / custom service) for large collections.
 
 ## Scripts (Deploy & Interact)
 
-| Script | Description |
-|--------|-------------|
-| `deployCore.ts` | Deploy + initialize minimal wrapper |
-| `deployMintBurn.ts` | Deploy mint/burn enabled wrapper |
-| `deployManaged.ts` | Full management & neutralization |
-| `deployEnumerable.ts` | Enumeration variant |
-| `interactCore.ts` | Confirms minimal surface (no mint/burn) |
-| `interactMintBurn.ts` | Mint, approval, burnFrom flows |
-| `interactManaged.ts` | KYC, pause, freeze, neutralize, burn, delete attempt |
-| `interactEnumerable.ts` | Mint + enumerate + underlying transfer |
+| Script                  | Description                                          |
+| ----------------------- | ---------------------------------------------------- |
+| `deployCore.ts`         | Deploy + initialize minimal wrapper                  |
+| `deployMintBurn.ts`     | Deploy mint/burn enabled wrapper                     |
+| `deployManaged.ts`      | Full management & neutralization                     |
+| `deployEnumerable.ts`   | Enumeration variant                                  |
+| `interactCore.ts`       | Confirms minimal surface (no mint/burn)              |
+| `interactMintBurn.ts`   | Mint, approval, burnFrom flows                       |
+| `interactManaged.ts`    | KYC, pause, freeze, neutralize, burn, delete attempt |
+| `interactEnumerable.ts` | Mint + enumerate + underlying transfer               |
 
 **NOTE**: Replace placeholder addresses post‑deployment.
 
@@ -282,8 +283,9 @@ Apache-2.0.
 
 ---
 
-**See also:**  
-- [`docs/1. hts-standard.md`](./docs/1.%20hts-standard.md) – Deep dive into the architectural standard  
-- [`docs/2. simplehts721.md`](./docs/2.%20simplehts721.md) – Guide to simple example contracts  
+**See also:**
+
+- [`docs/1. hts-standard.md`](./docs/1.%20hts-standard.md) – Deep dive into the architectural standard
+- [`docs/2. simplehts721.md`](./docs/2.%20simplehts721.md) – Guide to simple example contracts
 
 Happy building on Hedera! 🚀
