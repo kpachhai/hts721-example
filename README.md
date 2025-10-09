@@ -108,7 +108,7 @@ Typical masks:
 
 ## Initialization (InitConfig)
 
-```js
+```ts
 await wrapper.initialize(
   {
     name: "Demo",
@@ -197,29 +197,6 @@ Use an off-chain indexer (Mirror Node / custom service) for large collections.
 
 ---
 
-## Key Neutralization
-
-Note: The neutralization pattern is just an example and could be replaced with another method to get a new wallet address.
-
-> Renders keys permanently unusable by rotating them to random Ed25519 public keys derived from a single PRNG seed.
-
-```js
-neutralizeKeysRandom(
-  {
-    admin:false, kyc:false,
-    freeze:true, wipe:true,
-    supply:false, fee:false, pause:false
-  },
-  false
-);
-```
-
-- Emits `KeysNeutralized(mask, rootSeed)`
-- Auditors recompute derived pubkeys deterministically
-- Neutralize `ADMIN` last (requires `confirmAdmin=true`)
-
----
-
 ## Development
 
 ### Install & Build
@@ -259,7 +236,11 @@ npx hardhat run scripts/interact_managed.ts --network testnet
 
 ---
 
-## Example Neutralization (TS)
+## Key Neutralization
+
+Note: The neutralization pattern is just an example and could be replaced with another method to get a new wallet address.
+
+> Renders keys permanently unusable by rotating them to random Ed25519 public keys derived from a single PRNG seed.
 
 ```ts
 await managed.neutralizeKeysRandom(
@@ -275,6 +256,10 @@ await managed.neutralizeKeysRandom(
   false
 );
 ```
+
+- Emits `KeysNeutralized(mask, rootSeed)`
+- Auditors recompute derived pubkeys deterministically
+- Neutralize `ADMIN` last (requires `confirmAdmin=true`)
 
 ---
 
