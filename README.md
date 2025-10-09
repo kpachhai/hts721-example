@@ -71,12 +71,12 @@ Typical “wrapper” NFTs duplicate ERC‑721 logic and inflate bytecode. On He
 | 32  | FEE    | Update custom (royalty / fixed) fees |
 | 64  | PAUSE  | Pause / unpause transfers |
 
-> NFT creation **must** include SUPPLY (16) or HTS returns rc=180 (TOKEN_HAS_NO_SUPPLY_KEY).
+> NFT creation **must** include SUPPLY or HTS returns error: TOKEN_HAS_NO_SUPPLY_KEY.
 
 Typical masks:
 - Core only (still needs supply) → `ADMIN | SUPPLY`
 - Mint/Burn + Pause → `ADMIN | SUPPLY | PAUSE`
-- Full management → `ADMIN | KYC | FREEZE | WIPE | SUPPLY | FEE | PAUSE` (=127)
+- Full management → `ADMIN | KYC | FREEZE | WIPE | SUPPLY | FEE | PAUSE`
 
 ---
 
@@ -108,19 +108,25 @@ Typical masks:
 
 ## Initialization (InitConfig)
 
-```solidity
-await wrapper.initialize({
-  name: "Demo",
-  symbol: "D1",
-  memo: "phase0",
-  keyMask: uint8(1 | 16 | 64), // ADMIN | SUPPLY | PAUSE
-  freezeDefault: false,
-  autoRenewAccount: ethers.ZeroAddress,
-  autoRenewPeriod: 0
-}, { value: ethers.parseEther("10") });
+```js
+await wrapper.initialize(
+  {
+    name: "Demo",
+    symbol: "D1",
+    memo: "phase0",
+    keyMask: uint8(1 | 16 | 64), // ADMIN | SUPPLY | PAUSE
+    freezeDefault: false,
+    autoRenewAccount: deployer.address(eg 0xabcd...),
+    autoRenewPeriod: 0
+  }, 
+  { 
+    value: ethers.parseEther("10"), 
+    gasLimit: 400_000 
+  }
+);
 ```
 
-- `autoRenewAccount == 0` → wrapper treasury becomes autoRenew account.
+- `autoRenewAccount == deployer.address` → deployer becomes autoRenew account.
 - `autoRenewPeriod == 0` → default constant (7776000 seconds) used.
 - `metadata` (during mint) limited to ≤ 100 bytes per HTS rules.
 
@@ -133,7 +139,6 @@ await wrapper.initialize({
 | Mint to user | `mintTo(user, metadata)` (wrapper supply key), wrapper transfers serial from treasury to user |
 | Burn (treasury) | `burn(serial)` (ensures treasury holds serial) |
 | Burn (user-owned) | User grants `approve(wrapper, serial)` → owner calls `burnFrom(user, serial)` |
-| Pull then redistribute (custom) | Same pattern as burnFrom, but transfer elsewhere instead of burn (extend contract) |
 
 ---
 
@@ -147,27 +152,6 @@ await wrapper.initialize({
 | `wipe(account, serials[])` | WIPE | Destroys specified serials from account |
 | `updateNftRoyaltyFees(fixedBytes, royaltyBytes)` | FEE | ABI-packed arrays reduce code size |
 | `deleteToken()` | ADMIN | All NFTs must be gone / prerequisites satisfied |
-
----
-
-## Key Neutralization
-
-> Renders keys permanently unusable by rotating them to random Ed25519 public keys derived from a single PRNG seed.
-
-```solidity
-neutralizeKeysRandom(
-  Flags({
-    admin:false, kyc:false,
-    freeze:true, wipe:true,
-    supply:false, fee:false, pause:false
-  }),
-  false
-);
-```
-
-- Emits `KeysNeutralized(mask, rootSeed)`
-- Auditors recompute derived pubkeys deterministically
-- Neutralize `ADMIN` last (requires `confirmAdmin=true`)
 
 ---
 
@@ -198,18 +182,7 @@ Use an off-chain indexer (Mirror Node / custom service) for large collections.
 | `interactManaged.ts` | KYC, pause, freeze, neutralize, burn, delete attempt |
 | `interactEnumerable.ts` | Mint + enumerate + underlying transfer |
 
-**NOTE**: Replace placeholder addresses (`0xReplaceWith...`) post‑deployment.
-
----
-
-## Common Failure Codes
-
-| RC | Meaning | Fix |
-|----|---------|-----|
-| 180 | TOKEN_HAS_NO_SUPPLY_KEY | Include `SUPPLY` bit (16) in keyMask |
-| 184 | TOKEN_NOT_ASSOCIATED_TO_ACCOUNT | User must associate underlying token first |
-| 194 | TOKEN_ALREADY_ASSOCIATED | Benign – ignore in association flows |
-| Other non‑22 | Generic failure | Inspect `HtsCallFailed` revert (selector + rc) |
+**NOTE**: Replace placeholder addresses post‑deployment.
 
 ---
 
@@ -222,7 +195,28 @@ Use an off-chain indexer (Mirror Node / custom service) for large collections.
 5. Finalize operational readiness → neutralize PAUSE
 6. Escrow / verify distribution → neutralize ADMIN (token immutable)
 
-Maintain a public NOTION/markdown log of each neutralization tx (mask + rootSeed).
+---
+
+## Key Neutralization
+
+Note: The neutralization pattern is just an example and could be replaced with another method to get a new wallet address.
+
+> Renders keys permanently unusable by rotating them to random Ed25519 public keys derived from a single PRNG seed.
+
+```js
+neutralizeKeysRandom(
+  {
+    admin:false, kyc:false,
+    freeze:true, wipe:true,
+    supply:false, fee:false, pause:false
+  },
+  false
+);
+```
+
+- Emits `KeysNeutralized(mask, rootSeed)`
+- Auditors recompute derived pubkeys deterministically
+- Neutralize `ADMIN` last (requires `confirmAdmin=true`)
 
 ---
 
